@@ -1,4 +1,5 @@
-// Neon Grave 2026 - 2028
+// Copyright (c) 2026 Viktor Antonyak. All Rights Reserved.
+// Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 #pragma once
 
@@ -79,11 +80,11 @@ public:
 	bool IsActive() const { return bIsActive; }
 	
 	/** Whether the action can be canceled. If true, the action can be canceled by other actions that have the appropriate cancel tags. If false, the action cannot be canceled once it is executed. */
-	UFUNCTION(BlueprintGetter, Category="Gameplay Action")
+	UFUNCTION(BlueprintCallable, Category="Gameplay Action")
 	bool CanBeCanceled() const { return bCanBeCanceled; }
 	
 	/** Sets whether the action can be canceled. If true, the action can be canceled by other actions that have the appropriate cancel tags. If false, the action cannot be canceled once it is executed. */
-	UFUNCTION(BlueprintSetter, Category="Gameplay Action")
+	UFUNCTION(BlueprintCallable, Category="Gameplay Action")
 	void SetCanBeCanceled(bool CanBeCanceled) { bCanBeCanceled = CanBeCanceled; }
 	
 	/** Requests to execute the action. This will check if the action can be executed by calling CanExecuteAction() and if it can, it will call ExecuteAction(). 

@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Viktor Antonyak. All Rights Reserved. Gameplay Action Framework.
+// Copyright (c) 2026 Viktor Antonyak. All Rights Reserved.
+// Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 #include "GameplayActionFramework.h"
 

@@ -1,7 +1,9 @@
-// Copyright (c) 2026 Viktor Antonyak. All Rights Reserved. Gameplay Action Framework.
-
+// Copyright (c) 2026 Viktor Antonyak. All Rights Reserved.
+// Licensed under the MIT License. See LICENSE file in the project root for full license information.
 
 #include "GameplayActionComponent.h"
+#include "GameplayAttributeSet.h"
+#include "GameplayAction.h" 
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(GameplayActionComponent)
 
@@ -13,12 +15,48 @@ UGameplayActionComponent::UGameplayActionComponent(const FObjectInitializer& Obj
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
+void UGameplayActionComponent::BeginPlay()
+{
+	Super::BeginPlay();
+	
+	InitActorInfo();
+	InitAttributes();
+}
+
+void UGameplayActionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	Super::EndPlay(EndPlayReason);
+	
+	GameplayActionActorInfo.Reset();
+	GameplayTagContainer.Reset();
+
+	for (UGameplayAction* ActiveAction : ActiveActions)
+	{
+		if (IsValid(ActiveAction))
+		{
+			ActiveAction->RequestEndAction();
+		}
+	}
+	
+	for (const FGameplayActionSpec& AddedAction : AddedActions)
+	{
+		if (IsValid(AddedAction.Action))
+		{
+			AddedAction.Action->MarkAsGarbage();
+		}
+	}
+	
+	ActiveActions.Empty();
+	AddedActions.Empty();
+	AttributeSets.Empty(); 
+}
+
+// --- Action Management ---
 FGameplayActionSpec UGameplayActionComponent::AddGameplayAction(const TSubclassOf<UGameplayAction> Action, const int32 Level)
 {
 	if (!IsValid(Action) || !GameplayActionActorInfo.IsValid())
 	{
 		UE_LOG(LogGameplayActionComponent, Warning, TEXT("AddGameplayAction: Invalid Action Class"));
-		
 		return FGameplayActionSpec();
 	}
 	
@@ -46,7 +84,6 @@ void UGameplayActionComponent::RemoveGameplayAction(const FGameplayActionSpec& A
 	}
 	
 	ActionSpec.Action->DeinitializeAction();
-	
 	ActionSpec.Action->MarkAsGarbage();
 }
 
@@ -62,16 +99,15 @@ bool UGameplayActionComponent::TryActivateActionBySpec(const FGameplayActionSpec
 	}
 }
 
-bool UGameplayActionComponent::TryActivateActionsByTag(const FGameplayTagContainer& ActionTag)
+bool UGameplayActionComponent::TryActivateActionsByTag(UPARAM(meta=(GameplayTagFilter="GameplayEventTagsCategory")) FGameplayTagContainer ActionTags)
 {
 	bool bActivatedAny = false;
 	
-	for (const FGameplayActionSpec ActionSpec : AddedActions)
+	for (const FGameplayActionSpec& ActionSpec : AddedActions)
 	{
-		if (IsValid(ActionSpec.Action) && ActionTag.HasTag(ActionSpec.Action->GetActionTag()))
+		if (IsValid(ActionSpec.Action) && ActionSpec.Action->GetActionTag().MatchesAny(ActionTags))
 		{
 			ActionSpec.Action->RequestExecuteAction(GameplayActionActorInfo, ActionSpec.Level);
-			
 			bActivatedAny = true;
 		}
 	}
@@ -95,14 +131,127 @@ void UGameplayActionComponent::PressInputID(int32 InputID)
 void UGameplayActionComponent::ReleaseInputID(int32 InputID)
 {
 	const FGameplayActionSpec* ActionSpec = AddedActions.FindByPredicate([InputID](const FGameplayActionSpec Spec)
-{
-	return Spec.InputID == InputID;
-});
+	{
+		return Spec.InputID == InputID;
+	});
 
 	if (ActionSpec && IsValid(ActionSpec->Action))
 	{
 		ActionSpec->Action->RequestEndAction();
 	}
+}
+
+void UGameplayActionComponent::AddActiveAction(UGameplayAction* Action)
+{
+	const FGameplayActionSpec* ExistingActionSpec = AddedActions.FindByPredicate([Action](const FGameplayActionSpec& Spec)
+	{
+		return Spec.Action == Action;
+	});
+	
+	if (Action && ExistingActionSpec && !ActiveActions.Contains(Action))
+	{
+		ActiveActions.Add(Action);
+		OnActionExecuted.Broadcast(Action->GetActionTag());
+	}
+}
+
+void UGameplayActionComponent::RemoveActiveAction(UGameplayAction* Action, bool bWasCanceled)
+{
+	if (Action)
+	{
+		ActiveActions.Remove(Action);
+		OnActionEnded.Broadcast(Action->GetActionTag(), bWasCanceled);
+	}
+}
+
+// --- Tag Management ---
+void UGameplayActionComponent::AddOwnedGameplayTag(FGameplayTag Tag)
+{
+	if (GameplayTagContainer.IsValid())
+	{
+		GameplayTagContainer->AddTag(Tag);
+	}
+}
+
+void UGameplayActionComponent::AddOwnedGameplayTags(FGameplayTagContainer Tags)
+{
+	if (GameplayTagContainer.IsValid())
+	{
+		GameplayTagContainer->AppendTags(Tags);
+	}
+}
+
+void UGameplayActionComponent::RemoveOwnedGameplayTags(FGameplayTagContainer Tags)
+{
+	if (GameplayTagContainer.IsValid())
+	{
+		GameplayTagContainer->RemoveTags(Tags);
+	}
+}
+
+// --- Attribute Management ---
+UGameplayAttributeSet* UGameplayActionComponent::GetAttributeSetByClass(TSubclassOf<UGameplayAttributeSet> AttributeClass) const
+{
+	if (!AttributeClass) return nullptr;
+
+	for (UGameplayAttributeSet* Set : AttributeSets)
+	{
+		// FIX: Use IsA to support subclasses
+		if (IsValid(Set) && Set->IsA(AttributeClass))
+		{
+			return Set;
+		}
+	}
+	return nullptr;
+}
+
+float UGameplayActionComponent::GetAttributeValue(const FGameplayAttribute& Attribute) const
+{
+	if (!Attribute.IsValid())
+	{
+		return 0.0f;
+	}
+
+	const UGameplayAttributeSet* AttributeSet = GetAttributeSetByClass(Attribute.GetAttributeSetClass());
+
+	if (AttributeSet == nullptr)
+	{
+		return 0.0f;
+	}
+	
+	return AttributeSet->GetNumericValue(Attribute);
+}
+
+void UGameplayActionComponent::SetAttributeValue(const FGameplayAttribute& Attribute, float NewValue)
+{
+	if (!Attribute.IsValid())
+	{
+		return;
+	}
+
+	UGameplayAttributeSet* AttributeSet = GetAttributeSetByClass(Attribute.GetAttributeSetClass());
+
+	if (AttributeSet)
+	{
+		AttributeSet->SetNumericValue(Attribute, NewValue);
+	}
+}
+
+UGameplayAttributeSet* UGameplayActionComponent::AddAttributeSet(TSubclassOf<UGameplayAttributeSet> AttributeSetClass)
+{
+	if (!AttributeSetClass)
+	{
+		return nullptr;
+	}
+	
+	if (UGameplayAttributeSet* ExistingSet = GetAttributeSetByClass(AttributeSetClass))
+	{
+		return ExistingSet;
+	}
+
+	UGameplayAttributeSet* NewAttributeSet = NewObject<UGameplayAttributeSet>(GetOwner(), AttributeSetClass);
+	AttributeSets.Add(NewAttributeSet);
+	return NewAttributeSet;
 }
 
 void UGameplayActionComponent::InitActorInfo()
@@ -117,103 +266,40 @@ void UGameplayActionComponent::InitActorInfo()
 	ActorInfo.OwnerActor = GetOwner();
 	
 	TArray<USkeletalMeshComponent*> SkeletalMeshComponents;
-	
 	GetOwner()->GetComponents<USkeletalMeshComponent>(SkeletalMeshComponents);
-	
 	ActorInfo.SkeletalMeshComponents.Append(SkeletalMeshComponents);
 	
 	ActorInfo.MovementComponent = GetOwner()->GetComponentByClass<UMovementComponent>();
-	
 	ActorInfo.ActionComponent = this;
 	
 	GameplayActionActorInfo = MakeShared<FGameplayActionActorInfo>(ActorInfo);
-	
 	GameplayTagContainer = MakeShared<FGameplayTagContainer>();
 }
 
-void UGameplayActionComponent::AddActiveAction(UGameplayAction* Action)
+void UGameplayActionComponent::InitAttributes()
 {
-	const FGameplayActionSpec* ExistingActionSpec = AddedActions.FindByPredicate([Action](const FGameplayActionSpec& Spec)
+	// Create default attribute sets
+	for (const TSubclassOf<UGameplayAttributeSet>& AttributeClass : DefaultAttributes)
 	{
-		return Spec.Action == Action;
-	});
-	
-	if (Action && ExistingActionSpec && !ActiveActions.Contains(Action))
-	{
-		ActiveActions.Add(Action);
-		
-		OnActionExecuted.Broadcast(Action->GetActionTag());
-	}
-}
-
-void UGameplayActionComponent::RemoveActiveAction(UGameplayAction* Action, bool bWasCanceled)
-{
-	if (Action)
-	{
-		ActiveActions.Remove(Action);
-		
-		OnActionEnded.Broadcast(Action->GetActionTag(), bWasCanceled);
-	}
-}
-
-void UGameplayActionComponent::AddOwnedGameplayTag(const FGameplayTag& Tag)
-{
-	if (GameplayTagContainer.IsValid())
-	{
-		GameplayTagContainer->AddTag(Tag);
-	}
-}
-
-void UGameplayActionComponent::AddOwnedGameplayTags(const FGameplayTagContainer& Tags)
-{
-	if (GameplayTagContainer.IsValid())
-	{
-		GameplayTagContainer->AppendTags(Tags);
-	}
-}
-
-void UGameplayActionComponent::RemoveOwnedGameplayTags(const FGameplayTagContainer& Tags)
-{
-	if (GameplayTagContainer.IsValid())
-	{
-		GameplayTagContainer->RemoveTags(Tags);
-	}
-}
-
-void UGameplayActionComponent::BeginPlay()
-{
-	Super::BeginPlay();
-	
-	InitActorInfo();
-}
-
-void UGameplayActionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
-{
-	Super::EndPlay(EndPlayReason);
-	
-	GameplayActionActorInfo.Reset();
-	
-	GameplayTagContainer.Reset();
-
-	for (UGameplayAction* ActiveAction : ActiveActions)
-	{
-		if (IsValid(ActiveAction))
+		if (AttributeClass)
 		{
-			ActiveAction->RequestEndAction();
+			AddAttributeSet(AttributeClass); 
 		}
 	}
-	
-	for (const FGameplayActionSpec& AddedAction : AddedActions)
+
+	// Apply initial attribute values
+	for (const FAttributeInitializationData& InitData : InitialAttributeValues)
 	{
-		if (IsValid(AddedAction.Action))
+		if (!InitData.Attribute.IsValid())
 		{
-			AddedAction.Action->MarkAsGarbage();
+			continue;
+		}
+		
+		UGameplayAttributeSet* AttributeSet = GetAttributeSetByClass(InitData.Attribute.GetAttributeSetClass());
+
+		if (AttributeSet)
+		{
+			AttributeSet->InitNumericValue(InitData.Attribute, InitData.InitialValue);
 		}
 	}
-	
-	ActiveActions.Empty();
-	
-	AddedActions.Empty();
 }
-
-
