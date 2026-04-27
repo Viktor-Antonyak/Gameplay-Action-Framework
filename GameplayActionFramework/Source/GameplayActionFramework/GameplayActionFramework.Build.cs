@@ -27,6 +27,7 @@ public class GameplayActionFramework : ModuleRules
 				"Core",
 				"GameplayTags",
 				"GameplayTasks",
+				"StructUtils"
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);

@@ -4,6 +4,8 @@
 #include "GameplayActionComponent.h"
 #include "GameplayAttributeSet.h"
 #include "GameplayAction.h" 
+#include "GameFramework/MovementComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(GameplayActionComponent)
 
@@ -37,6 +39,14 @@ void UGameplayActionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 			ActiveAction->RequestEndAction();
 		}
 	}
+
+	for (UGameplayAction* TriggeredAction : ActiveTriggeredActions)
+	{
+		if (IsValid(TriggeredAction))
+		{
+			TriggeredAction->RequestEndAction();
+		}
+	}
 	
 	for (const FGameplayActionSpec& AddedAction : AddedActions)
 	{
@@ -47,6 +57,7 @@ void UGameplayActionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 	
 	ActiveActions.Empty();
+	ActiveTriggeredActions.Empty();
 	AddedActions.Empty();
 	AttributeSets.Empty(); 
 }
@@ -57,6 +68,13 @@ FGameplayActionSpec UGameplayActionComponent::AddGameplayAction(const TSubclassO
 	if (!IsValid(Action) || !GameplayActionActorInfo.IsValid())
 	{
 		UE_LOG(LogGameplayActionComponent, Warning, TEXT("AddGameplayAction: Invalid Action Class"));
+		return FGameplayActionSpec();
+	}
+
+	const UGameplayAction* DefaultAction = Action->GetDefaultObject<UGameplayAction>();
+	if (DefaultAction && DefaultAction->ActionType == EGameplayActionType::Triggered)
+	{
+		UE_LOG(LogGameplayActionComponent, Warning, TEXT("AddGameplayAction: Action class %s is a Triggered type and cannot be added as a permanent action."), *Action->GetName());
 		return FGameplayActionSpec();
 	}
 	
@@ -99,7 +117,7 @@ bool UGameplayActionComponent::TryActivateActionBySpec(const FGameplayActionSpec
 	}
 }
 
-bool UGameplayActionComponent::TryActivateActionsByTag(UPARAM(meta=(GameplayTagFilter="GameplayEventTagsCategory")) FGameplayTagContainer ActionTags)
+bool UGameplayActionComponent::TryActivateActionsByTag(FGameplayTagContainer ActionTags)
 {
 	bool bActivatedAny = false;
 	
@@ -107,12 +125,32 @@ bool UGameplayActionComponent::TryActivateActionsByTag(UPARAM(meta=(GameplayTagF
 	{
 		if (IsValid(ActionSpec.Action) && ActionSpec.Action->GetActionTag().MatchesAny(ActionTags))
 		{
-			ActionSpec.Action->RequestExecuteAction(GameplayActionActorInfo, ActionSpec.Level);
-			bActivatedAny = true;
+			if (ActionSpec.Action->RequestExecuteAction(GameplayActionActorInfo, ActionSpec.Level))
+			{
+				bActivatedAny = true;
+			}
 		}
 	}
 	
 	return bActivatedAny;
+}
+
+void UGameplayActionComponent::TriggerActionByClass(TSubclassOf<UGameplayAction> ActionClass, const FInstancedStruct& Payload, int32 ActionLevel)
+{
+	if (!ActionClass || !GameplayActionActorInfo.IsValid())
+	{
+		UE_LOG(LogGameplayActionComponent, Warning, TEXT("TriggerActionByClass: Invalid ActionClass or GameplayActionActorInfo."));
+		return;
+	}
+
+	UGameplayAction* NewAction = NewObject<UGameplayAction>(this, ActionClass);
+	if (!IsValid(NewAction))
+	{
+		UE_LOG(LogGameplayActionComponent, Error, TEXT("TriggerActionByClass: Failed to create new action object of class %s."), *ActionClass->GetName());
+		return;
+	}
+
+	NewAction->RequestTriggerAction(GameplayActionActorInfo, ActionLevel, Payload);
 }
 
 void UGameplayActionComponent::PressInputID(int32 InputID)
@@ -164,15 +202,25 @@ void UGameplayActionComponent::RemoveActiveAction(UGameplayAction* Action, bool 
 	}
 }
 
-// --- Tag Management ---
-void UGameplayActionComponent::AddOwnedGameplayTag(FGameplayTag Tag)
+void UGameplayActionComponent::AddTriggeredAction(UGameplayAction* Action)
 {
-	if (GameplayTagContainer.IsValid())
+	if (IsValid(Action))
 	{
-		GameplayTagContainer->AddTag(Tag);
+		ActiveTriggeredActions.Add(Action);
+		OnTriggeredActionActivated.Broadcast(Action->GetClass());
 	}
 }
 
+void UGameplayActionComponent::RemoveTriggeredAction(UGameplayAction* Action)
+{
+	if (IsValid(Action))
+	{
+		ActiveTriggeredActions.Remove(Action);
+		OnTriggeredActionEnded.Broadcast(Action->GetClass());
+	}
+}
+
+// --- Tag Management ---
 void UGameplayActionComponent::AddOwnedGameplayTags(FGameplayTagContainer Tags)
 {
 	if (GameplayTagContainer.IsValid())
@@ -196,7 +244,6 @@ UGameplayAttributeSet* UGameplayActionComponent::GetAttributeSetByClass(TSubclas
 
 	for (UGameplayAttributeSet* Set : AttributeSets)
 	{
-		// FIX: Use IsA to support subclasses
 		if (IsValid(Set) && Set->IsA(AttributeClass))
 		{
 			return Set;
@@ -278,7 +325,6 @@ void UGameplayActionComponent::InitActorInfo()
 
 void UGameplayActionComponent::InitAttributes()
 {
-	// Create default attribute sets
 	for (const TSubclassOf<UGameplayAttributeSet>& AttributeClass : DefaultAttributes)
 	{
 		if (AttributeClass)
@@ -287,7 +333,6 @@ void UGameplayActionComponent::InitAttributes()
 		}
 	}
 
-	// Apply initial attribute values
 	for (const FAttributeInitializationData& InitData : InitialAttributeValues)
 	{
 		if (!InitData.Attribute.IsValid())

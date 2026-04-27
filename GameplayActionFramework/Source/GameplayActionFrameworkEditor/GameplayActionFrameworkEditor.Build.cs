@@ -27,7 +27,10 @@ public class GameplayActionFrameworkEditor : ModuleRules
                 "InputCore",
                 "GraphEditor",
                 "BlueprintGraph",
-                "KismetWidgets"
+                "KismetWidgets",
+                "KismetCompiler",
+                "AssetTools",
+                "AssetDefinition"
             }
         );
     }

@@ -24,17 +24,30 @@ TSharedRef<SWidget> SGraphPinGameplayAttribute::GetDefaultValueWidget()
 	for (TObjectIterator<UClass> ClassIt; ClassIt; ++ClassIt)
 	{
 		UClass* Class = *ClassIt;
-		if (Class->IsChildOf(UGameplayAttributeSet::StaticClass()) && !Class->HasAnyClassFlags(CLASS_Abstract))
+		
+		// Filter out garbage classes created by Live Coding / Hot Reload (SKEL_, REINST_)
+		FString ClassName = Class->GetName();
+		if (ClassName.StartsWith(TEXT("SKEL_")) || ClassName.StartsWith(TEXT("REINST_")) || ClassName.StartsWith(TEXT("TRASH_")))
+		{
+			continue;
+		}
+
+		// Only consider valid GameplayAttributeSet classes
+		if (Class->IsChildOf(UGameplayAttributeSet::StaticClass()) && 
+			!Class->HasAnyClassFlags(CLASS_Abstract | CLASS_NewerVersionExists))
 		{
 			for (TFieldIterator<FProperty> PropIt(Class, EFieldIteratorFlags::ExcludeSuper); PropIt; ++PropIt)
 			{
-				FStructProperty* StructProp = CastField<FStructProperty>(*PropIt);
+				FProperty* Property = *PropIt;
+				
+				// Check if the property is FGameplayAttributeData
+				FStructProperty* StructProp = CastField<FStructProperty>(Property);
 				if (StructProp && StructProp->Struct == FGameplayAttributeData::StaticStruct())
 				{
-					FString ClassName = Class->GetName();
-					ClassName.RemoveFromStart(TEXT("U"));
-					FString DisplayName = FString::Printf(TEXT("%s.%s"), *ClassName, *PropIt->GetName());
-					AttributeOptions.Add(MakeShareable(new FAttributeItem(*PropIt, DisplayName)));
+					FString DisplayClassName = Class->GetName();
+					DisplayClassName.RemoveFromStart(TEXT("U"));
+					FString DisplayName = FString::Printf(TEXT("%s.%s"), *DisplayClassName, *Property->GetName());
+					AttributeOptions.Add(MakeShareable(new FAttributeItem(Property, DisplayName)));
 				}
 			}
 		}
@@ -97,10 +110,10 @@ TSharedRef<SWidget> SGraphPinGameplayAttribute::GetDefaultValueWidget()
 				FString ClassPath, PropertyName;
 				if (PropertyPath.Split(TEXT(":"), &ClassPath, &PropertyName))
 				{
-					FString ClassName;
-					ClassPath.Split(TEXT("."), nullptr, &ClassName, ESearchCase::IgnoreCase, ESearchDir::FromEnd);
-					ClassName.RemoveFromStart(TEXT("U"));
-					return FText::FromString(FString::Printf(TEXT("%s.%s"), *ClassName, *PropertyName));
+					FString DisplayClassName;
+					ClassPath.Split(TEXT("."), nullptr, &DisplayClassName, ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+					DisplayClassName.RemoveFromStart(TEXT("U"));
+					return FText::FromString(FString::Printf(TEXT("%s.%s"), *DisplayClassName, *PropertyName));
 				}
 
 				return FText::FromString(PropertyPath);

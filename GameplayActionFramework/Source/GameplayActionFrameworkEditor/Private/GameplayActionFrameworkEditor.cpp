@@ -7,6 +7,8 @@
 #include "EdGraphUtilities.h"
 #include "GameplayAttributeSet.h"
 #include "PropertyEditorModule.h"
+#include "AssetToolsModule.h"
+#include "IAssetTools.h"
 
 #define LOCTEXT_NAMESPACE "FGameplayActionFrameworkEditorModule"
 
@@ -28,6 +30,7 @@ public:
 };
 
 TSharedPtr<FGameplayAttributePinFactory> AttributePinFactory;
+EAssetTypeCategories::Type GAFAssetCategory;
 
 void FGameplayActionFrameworkEditorModule::StartupModule()
 {
@@ -40,6 +43,11 @@ void FGameplayActionFrameworkEditorModule::StartupModule()
 		"GameplayAttribute",
 		FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FGameplayAttributeCustomization::MakeInstance)
 	);
+
+	// Register Asset Categories and Actions
+	IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
+	GAFAssetCategory = AssetTools.RegisterAdvancedAssetCategory(FName(TEXT("GAF")), LOCTEXT("GAFCategory", "Gameplay Action Framework"));
+	
 }
 
 void FGameplayActionFrameworkEditorModule::ShutdownModule()
@@ -55,6 +63,23 @@ void FGameplayActionFrameworkEditorModule::ShutdownModule()
 		FEdGraphUtilities::UnregisterVisualPinFactory(AttributePinFactory);
 		AttributePinFactory.Reset();
 	}
+
+	// Unregister asset actions
+	if (FModuleManager::Get().IsModuleLoaded("AssetTools"))
+	{
+		IAssetTools& AssetTools = FModuleManager::GetModuleChecked<FAssetToolsModule>("AssetTools").Get();
+		for (auto Action : RegisteredAssetTypeActions)
+		{
+			AssetTools.UnregisterAssetTypeActions(Action.ToSharedRef());
+		}
+	}
+	RegisteredAssetTypeActions.Empty();
+}
+
+void FGameplayActionFrameworkEditorModule::RegisterAssetTypeAction(IAssetTools& AssetTools, TSharedRef<IAssetTypeActions> Action)
+{
+	AssetTools.RegisterAssetTypeActions(Action);
+	RegisteredAssetTypeActions.Add(Action);
 }
 
 #undef LOCTEXT_NAMESPACE

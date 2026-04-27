@@ -34,7 +34,17 @@ void FGameplayAttributeCustomization::CustomizeHeader(TSharedRef<IPropertyHandle
 	for (TObjectIterator<UClass> ClassIt; ClassIt; ++ClassIt)
 	{
 		UClass* Class = *ClassIt;
-		if (Class->IsChildOf(UGameplayAttributeSet::StaticClass()) && !Class->HasAnyClassFlags(CLASS_Abstract))
+		
+		// Filter out garbage classes created by Live Coding / Hot Reload (SKEL_, REINST_)
+		FString ClassName = Class->GetName();
+		if (ClassName.StartsWith(TEXT("SKEL_")) || ClassName.StartsWith(TEXT("REINST_")) || ClassName.StartsWith(TEXT("TRASH_")))
+		{
+			continue;
+		}
+
+		// Only consider valid GameplayAttributeSet classes
+		if (Class->IsChildOf(UGameplayAttributeSet::StaticClass()) && 
+			!Class->HasAnyClassFlags(CLASS_Abstract | CLASS_NewerVersionExists))
 		{
 			for (TFieldIterator<FProperty> PropIt(Class, EFieldIteratorFlags::ExcludeSuper); PropIt; ++PropIt)
 			{
@@ -44,10 +54,10 @@ void FGameplayAttributeCustomization::CustomizeHeader(TSharedRef<IPropertyHandle
 				FStructProperty* StructProp = CastField<FStructProperty>(Property);
 				if (StructProp && StructProp->Struct == FGameplayAttributeData::StaticStruct())
 				{
-					FString ClassName = Class->GetName();
-					ClassName.RemoveFromStart(TEXT("U"));
+					FString DisplayClassName = Class->GetName();
+					DisplayClassName.RemoveFromStart(TEXT("U"));
 					
-					FString DisplayName = FString::Printf(TEXT("%s.%s"), *ClassName, *Property->GetName());
+					FString DisplayName = FString::Printf(TEXT("%s.%s"), *DisplayClassName, *Property->GetName());
 					AttributeOptions.Add(MakeShareable(new FAttributeItem(Property, DisplayName)));
 				}
 			}
@@ -75,7 +85,7 @@ void FGameplayAttributeCustomization::CustomizeHeader(TSharedRef<IPropertyHandle
 	];
 }
 
-void FGameplayAttributeCustomization::CustomizeChildren(TSharedRef<IPropertyHandle> StructPropertyHandle, IDetailChildrenBuilder& StructBuilder, IPropertyTypeCustomizationUtils& CustomizationUtils)
+void FGameplayAttributeCustomization::CustomizeChildren(TSharedRef<IPropertyHandle> StructPropertyHandle, IDetailChildrenBuilder& StructBuilder, IPropertyTypeCustomizationUtils& StructCustomizationUtils)
 {
 }
 
@@ -114,7 +124,6 @@ FText FGameplayAttributeCustomization::GetSelectedText() const
 		if (AttributePropertyHandle->GetValueData(Data) == FPropertyAccess::Success && Data)
 		{
 			TFieldPath<FProperty>* FieldPath = (TFieldPath<FProperty>*)Data;
-			// Use Get() because TFieldPath doesn't have IsValid()
 			if (FieldPath && FieldPath->Get() != nullptr)
 			{
 				FProperty* Prop = FieldPath->Get();

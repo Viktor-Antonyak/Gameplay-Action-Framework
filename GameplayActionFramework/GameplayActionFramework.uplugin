@@ -22,7 +22,7 @@
 		},
 		{
 			"Name": "GameplayActionFrameworkEditor",
-			"Type": "Editor",
+			"Type": "UncookedOnly",
 			"LoadingPhase": "PostEngineInit"
 		}
 	]

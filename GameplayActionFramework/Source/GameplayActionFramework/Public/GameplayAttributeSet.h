@@ -10,6 +10,8 @@
 
 #define UE_API GAMEPLAYACTIONFRAMEWORK_API
 
+DECLARE_LOG_CATEGORY_EXTERN(LogGameplayAttributeSet, Log, All);
+
 class UGameplayAttributeSet;
 
 /** 
@@ -85,7 +87,7 @@ public:
 /**
  * Base class for all attribute sets in the Gameplay Action Framework.
  */
-UCLASS(Blueprintable, DefaultToInstanced, MinimalAPI)
+UCLASS(Blueprintable, DefaultToInstanced, MinimalAPI, ClassGroup=(Gameplay), Abstract)
 class UGameplayAttributeSet : public UObject
 {
 	GENERATED_BODY()
@@ -139,8 +141,7 @@ protected:
 	} \
 	FORCEINLINE void Init##PropertyName(float NewVal) \
 	{ \
-		PropertyName.SetBaseValue(NewVal); \
-		PropertyName.SetCurrentValue(NewVal); \
+		InitNumericValue(Get##PropertyName##Attribute(), NewVal); \
 	}
 
 #undef UE_API

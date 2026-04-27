@@ -3,6 +3,8 @@
 
 #include "GameplayAttributeSet.h"
 
+DEFINE_LOG_CATEGORY(LogGameplayAttributeSet);
+
 FGameplayAttribute::FGameplayAttribute(FProperty* InProperty)
 {
 	if (InProperty)

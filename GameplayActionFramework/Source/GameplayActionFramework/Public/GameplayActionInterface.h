@@ -19,15 +19,15 @@ class UGameplayActionInterface : public UInterface
 };
 
 /**
- * Interface for actors that want to use the Gameplay Action Framework. It provides a function to get the Gameplay Action Component of the actor.
+ * Interface for actors that have a Gameplay Action Component.
  */
 class GAMEPLAYACTIONFRAMEWORK_API IGameplayActionInterface
 {
 	GENERATED_BODY()
 
 public:
-	
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Gameplay Action Interface")
+	/** Returns the Gameplay Action Component of the actor. */
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category="Gameplay Action")
 	UGameplayActionComponent* GetGameplayActionComponent() const;
 };
 
